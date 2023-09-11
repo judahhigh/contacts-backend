@@ -17,6 +17,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use std::env;
 use dotenv::dotenv;
+use bcrypt::{ DEFAULT_COST, hash, verify };
 
 #[allow(warnings, unused)]
 mod prisma;
@@ -90,18 +91,33 @@ async fn create_user(
         None => (), //User doesn't exist, we can add it
     }
 
-    let user = client
-        .user()
-        .create(
-            body.username.to_string(),
-            body.email.to_string(),
-            body.password.to_string(),
-            vec![]
-        )
-        .exec().await
-        .unwrap();
+    // encrypt and salt password
+    match hash(body.password.clone(), DEFAULT_COST) {
+        Ok(hashed_password) => {
+            match verify(body.password.clone(), &hashed_password) {
+                Ok(verified) => {
+                    if !verified {
+                        return HttpResponse::InternalServerError().finish();
+                    }
 
-    HttpResponse::Ok().json(user)
+                    let user = client
+                        .user()
+                        .create(
+                            body.username.to_string(),
+                            body.email.to_string(),
+                            hashed_password.to_string(),
+                            vec![]
+                        )
+                        .exec().await
+                        .unwrap();
+
+                    HttpResponse::Ok().json(user)
+                }
+                Err(_error) => { HttpResponse::InternalServerError().finish() }
+            }
+        }
+        Err(_error) => { HttpResponse::InternalServerError().finish() }
+    }
 }
 
 #[derive(Deserialize)]
@@ -122,6 +138,7 @@ async fn update_user(
         return HttpResponse::Unauthorized().finish();
     }
 
+    // Make sure the user exists so we can update it
     match client.user().find_unique(user::id::equals(body.id.clone())).exec().await.unwrap() {
         Some(_) => (), // User exists, so we can update it,
         None => {
@@ -129,6 +146,21 @@ async fn update_user(
         } // User doesn't exist, should only create with post endpoint
     }
 
+    // In case the client changed the password, hash the new password
+    let hash_result = hash(body.password.clone(), DEFAULT_COST);
+    if hash_result.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+    let hashed_password = hash_result.unwrap();
+    let valid = verify(body.password.clone(), &hashed_password);
+    if valid.is_err() {
+        return HttpResponse::InternalServerError().finish();
+    }
+    if !valid.unwrap() {
+        return HttpResponse::InternalServerError().finish();
+    }
+
+    // Update the client's user data
     let user = client
         .user()
         .update(
@@ -136,7 +168,7 @@ async fn update_user(
             vec![
                 user::username::set(body.username.to_string()),
                 user::email::set(body.email.to_string()),
-                user::password::set(body.password.to_string())
+                user::password::set(hashed_password.to_string())
             ]
         )
         .exec().await

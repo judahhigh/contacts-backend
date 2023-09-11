@@ -17,6 +17,7 @@ prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust
     "sqlite", "migrations"
 ] }
 dotenv = "0.15.0"
+bcrypt = "0.15.0"
 
 
 [dependencies.uuid]
