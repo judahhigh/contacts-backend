@@ -1,139 +1,204 @@
 use actix_web::{
-    error,
-    Result,
     get,
     post,
     put,
     delete,
+    middleware,
     web,
     App,
     HttpResponse,
     HttpServer,
     Responder,
-    body::BoxBody,
-    http::{ header::ContentType, StatusCode },
     HttpRequest,
+    http,
 };
-use serde::{ Serialize, Deserialize };
-use derive_more::{ Display, Error };
+use actix_cors::Cors;
+use std::sync::Arc;
+use serde::Deserialize;
+use std::env;
+use dotenv::dotenv;
 
-#[derive(Debug, Display, Error)]
-enum ContactsError {
-    #[display(fmt = "internal error")]
-    InternalError,
+#[allow(warnings, unused)]
+mod prisma;
+use prisma::PrismaClient;
+use prisma::user;
 
-    #[display(fmt = "bad request")]
-    BadClientData,
-
-    #[display(fmt = "timeout")]
-    Timeout,
-}
-
-impl error::ResponseError for ContactsError {
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code())
-            .insert_header(ContentType::html())
-            .body(self.to_string())
-    }
-
-    fn status_code(&self) -> StatusCode {
-        match *self {
-            ContactsError::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
-            ContactsError::BadClientData => StatusCode::BAD_REQUEST,
-            ContactsError::Timeout => StatusCode::GATEWAY_TIMEOUT,
+fn is_authed(req: HttpRequest) -> bool {
+    match req.headers().get("Authorization") {
+        Some(auth_header) => {
+            log::info!("auth_header");
+            let auth_header = String::from(auth_header.to_str().unwrap());
+            match env::var("AUTH_KEY") {
+                Ok(auth_key) => auth_header.eq(&auth_key),
+                Err(_) => false,
+            }
         }
+        None => { false }
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct Contact {
-    id: String,
-    first_name: String,
-    last_name: String,
+#[get("/users/{user_id}")]
+async fn get_user(
+    client: web::Data<Arc<PrismaClient>>,
+    path: web::Path<String>,
+    req: HttpRequest
+) -> impl Responder {
+    if !is_authed(req) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    let user_id = path.into_inner();
+    match
+        client
+            .user()
+            .find_first(vec![user::id::equals(user_id)])
+            .exec().await
+            .unwrap()
+    {
+        Some(user_data) => HttpResponse::Ok().content_type("application/json").json(user_data),
+        None => HttpResponse::NotFound().finish(),
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateUserRequest {
+    username: String,
     email: String,
-    tel: String,
+    password: String,
 }
 
-#[derive(Serialize)]
-struct Contacts {
-    contacts: Vec<Contact>,
-}
-
-impl Responder for Contact {
-    type Body = BoxBody;
-
-    fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
-        let body = serde_json::to_string(&self).unwrap();
-        HttpResponse::Ok().content_type(ContentType::json()).body(body)
+#[post("/users")]
+async fn create_user(
+    client: web::Data<Arc<PrismaClient>>,
+    body: web::Json<CreateUserRequest>,
+    req: HttpRequest
+) -> impl Responder {
+    if !is_authed(req) {
+        return HttpResponse::Unauthorized().finish();
     }
-}
 
-impl Responder for Contacts {
-    type Body = BoxBody;
-
-    fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
-        let body = serde_json::to_string(&self).unwrap();
-        HttpResponse::Ok().content_type(ContentType::json()).body(body)
+    match
+        client
+            .user()
+            .find_unique(user::username::equals(body.username.clone()))
+            .exec().await
+            .unwrap()
+    {
+        Some(_) => {
+            return HttpResponse::BadRequest().finish();
+        }
+        None => (), //User doesn't exist, we can add it
     }
+
+    let user = client
+        .user()
+        .create(
+            body.username.to_string(),
+            body.email.to_string(),
+            body.password.to_string(),
+            vec![]
+        )
+        .exec().await
+        .unwrap();
+
+    HttpResponse::Ok().json(user)
 }
 
-#[get("/contacts")]
-async fn get_contacts() -> Result<Contacts, ContactsError> {
-    // Talk to db and get current contacts
-    Ok(Contacts {
-        contacts: Vec::new(),
-    })
+#[derive(Deserialize)]
+struct UpdateUserRequest {
+    id: String,
+    username: String,
+    email: String,
+    password: String,
 }
 
-#[post("/contacts/{contact_id}")]
-async fn persist_contact(path: web::Path<String>, contact: web::Json<Contact>) -> Result<Contact, ContactsError> {
-    Ok(
-        Contact {
-            id: contact.id.clone(),
-            first_name: contact.first_name.clone(),
-            last_name: contact.last_name.clone(),
-            email: contact.email.clone(),
-            tel: contact.tel.clone()
-        }
-    )
+#[put("/users")]
+async fn update_user(
+    client: web::Data<Arc<PrismaClient>>,
+    body: web::Json<UpdateUserRequest>,
+    req: HttpRequest
+) -> impl Responder {
+    if !is_authed(req) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    match client.user().find_unique(user::id::equals(body.id.clone())).exec().await.unwrap() {
+        Some(_) => (), // User exists, so we can update it,
+        None => {
+            return HttpResponse::BadRequest().finish();
+        } // User doesn't exist, should only create with post endpoint
+    }
+
+    let user = client
+        .user()
+        .update(
+            user::id::equals(body.id.to_string()),
+            vec![
+                user::username::set(body.username.to_string()),
+                user::email::set(body.email.to_string()),
+                user::password::set(body.password.to_string())
+            ]
+        )
+        .exec().await
+        .unwrap();
+
+    HttpResponse::Ok().json(user)
 }
 
-#[put("/contacts/{contact_id}")]
-async fn update_contact(path: web::Path<String>, contact: web::Json<Contact>) -> Result<Contact, ContactsError> {
-    Ok(
-        Contact {
-            id: contact.id.clone(),
-            first_name: contact.first_name.clone(),
-            last_name: contact.last_name.clone(),
-            email: contact.email.clone(),
-            tel: contact.tel.clone()
-        }
-    )
-}
+#[delete("/users/{user_id}")]
+async fn delete_user(
+    client: web::Data<Arc<PrismaClient>>,
+    path: web::Path<String>,
+    req: HttpRequest
+) -> impl Responder {
+    if !is_authed(req) {
+        return HttpResponse::Unauthorized().finish();
+    }
 
-#[delete("/contacts/{contact_id}")]
-async fn delete_contact(path: web::Path<String>, contact: web::Json<Contact>) -> Result<Contact, ContactsError> {
-    Ok(
-        Contact {
-            id: contact.id.clone(),
-            first_name: contact.first_name.clone(),
-            last_name: contact.last_name.clone(),
-            email: contact.email.clone(),
-            tel: contact.tel.clone()
-        }
-    )
-}
+    let user_id: String = path.into_inner();
+    match client.user().find_unique(user::id::equals(user_id.clone())).exec().await.unwrap() {
+        Some(_) => (), // User exists, so we can delete it,
+        None => {
+            return HttpResponse::BadRequest().finish();
+        } // User doesn't exist, should only create with post endpoint
+    }
 
+    let user = client.user().delete(user::id::equals(user_id)).exec().await.unwrap();
+    HttpResponse::Ok().json(user)
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    HttpServer::new(||
+    dotenv().ok();
+    let host = env::var("HOST").expect("The host name should exist.");
+    let allowed_origin = env::var("ALLOWED_ORIGIN").expect("The allowed origin should exist.");
+
+    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+
+    let client = Arc::new(PrismaClient::_builder().build().await.unwrap());
+
+    log::info!("Starting HTTP server at http://{}", host);
+
+    HttpServer::new(move || {
+        let cors = Cors::default()
+            .allowed_origin(allowed_origin.as_str())
+            .allowed_origin_fn(|origin, _req_head| {
+                origin.as_bytes().ends_with(b".rust-lang.org")
+            })
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
+            .allowed_header(http::header::CONTENT_TYPE)
+            .max_age(3600);
+
         App::new()
-            .service(get_contacts)
-            .service(persist_contact)
-            .route("/", web::get().to(HttpResponse::Ok))
-    )
-        .workers(1)
-        .bind(("127.0.0.1", 8080))?
+            .app_data(web::Data::new(client.clone()))
+            .wrap(middleware::Logger::default())
+            .wrap(cors)
+            .service(create_user)
+            .service(get_user)
+            .service(update_user)
+            .service(delete_user)
+    })
+        .bind(host)?
         .run().await
 }

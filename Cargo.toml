@@ -7,6 +7,25 @@ edition = "2021"
 
 [dependencies]
 actix-web = "4"
+actix-cors = "0.6.0-beta.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.105"
 derive_more = "0.99.17"
+env_logger = "0.10.0"
+log = "0.4.20"
+prisma-client-rust = { git = "https://github.com/Brendonovich/prisma-client-rust", tag = "0.6.9", default-features = false, features = [
+    "sqlite", "migrations"
+] }
+dotenv = "0.15.0"
+
+
+[dependencies.uuid]
+version = "1.4.1"
+features = [
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
+]
+
+[workspace]
+members = ["prisma-cli"]

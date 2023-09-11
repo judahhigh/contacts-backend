@@ -1,2 +1,6 @@
 /target
 .vscode/
+/contacts_backend.db
+/.env
+/src/prisma.rs
+/prisma/contacts_backend.db
