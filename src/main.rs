@@ -13,7 +13,14 @@ mod utils;
 mod contacts;
 
 use crate::users::{ update_user, get_user, delete_user, create_user };
-use crate::contacts::{ get_contact, get_all_contacts, create_contact };
+use crate::contacts::{
+    get_contact,
+    get_all_contacts,
+    create_contact,
+    update_contact,
+    delete_contact,
+    delete_all_contacts,
+};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -49,6 +56,9 @@ async fn main() -> std::io::Result<()> {
             .service(create_contact)
             .service(get_contact)
             .service(get_all_contacts)
+            .service(update_contact)
+            .service(delete_contact)
+            .service(delete_all_contacts)
     })
         .bind(host)?
         .run().await
