@@ -1,4 +1,4 @@
-use actix_web::{ post, web, Responder, HttpResponse, cookie::Cookie, http::header::ContentType };
+use actix_web::{ get, post, web, Responder, HttpResponse, http::header::ContentType, HttpRequest };
 use std::sync::Arc;
 use serde::Deserialize;
 use bcrypt::{ hash, verify, DEFAULT_COST };
@@ -8,7 +8,9 @@ use std::time::{ SystemTime, Duration };
 use crate::prisma::PrismaClient;
 use crate::prisma::user;
 
-use biscuit_auth::{ macros::*, KeyPair };
+use biscuit_auth::{ macros::*, Biscuit, KeyPair };
+
+use crate::utils::is_biscuit_authed;
 
 #[derive(Deserialize)]
 struct LoginRequest {
@@ -32,7 +34,7 @@ async fn login(
         return HttpResponse::Unauthorized().finish();
     }
     let user = user.unwrap();
-    let stored_password = user.password;
+    let stored_password = user.password.clone();
     let password_attempt = body.password.clone();
     let password_verification = verify(password_attempt, &stored_password);
     if password_verification.is_err() {
@@ -46,7 +48,7 @@ async fn login(
 
     // Generate a Biscuit and give it back to the client
     // The biscuit is made to expire in 3600s or 60m
-    let user_id = user.username.clone();
+    let user_id = user.id.clone();
     let authority = biscuit!(
         r#"
             user({user_id});
@@ -56,7 +58,10 @@ async fn login(
         expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let token = authority.build(&root_key_pair).unwrap();
-    HttpResponse::Ok().content_type(ContentType::plaintext()).insert_header(("Authorization", token.to_base64().unwrap())).finish()
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .insert_header(("Authorization", token.to_base64().unwrap()))
+        .json(user)
 }
 
 #[derive(Deserialize)]
@@ -121,5 +126,75 @@ async fn register(
     );
     let token = authority.build(&root_key_pair).unwrap();
 
-    HttpResponse::Ok().content_type("application/json").insert_header(("Authorization", token.to_base64().unwrap())).json(user)
+    HttpResponse::Ok()
+        .content_type("application/json")
+        .insert_header(("Authorization", token.to_base64().unwrap()))
+        .json(user)
+}
+
+
+#[get("/refresh")]
+async fn refresh(
+    client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
+    req: HttpRequest
+) -> impl Responder {
+    // Validate the incoming authorization token before issuing a new token with a new expiration
+    if !is_biscuit_authed(req.clone(), root_key_pair.clone()) {
+        return HttpResponse::Unauthorized().finish();
+    }
+
+    let token = req.headers().get("Authorization");
+    if token.is_none() {
+        return HttpResponse::Unauthorized().finish();
+    }
+    let token = String::from(token.unwrap().to_str().unwrap());
+    let token = Biscuit::from_base64(&token, root_key_pair.public());
+    if token.is_err() {
+        return HttpResponse::Unauthorized().finish();
+    }
+    let token = token.unwrap();
+
+    // According to how the biscuit is constructed, the zeroeth block should
+    // only contain a single symbol for the username.
+    let block_result = token.block_symbols(0);
+    if block_result.is_err() {
+        return HttpResponse::Unauthorized().finish();
+    }
+    let symbols = block_result.unwrap();
+    if symbols.len() != 1 {
+        return HttpResponse::Unauthorized().finish();
+    }
+    let user_id = symbols.first();
+    if user_id.is_none() {
+        return HttpResponse::Unauthorized().finish();
+    }
+    let user_id = user_id.unwrap().clone();
+
+    // Based on the username, let's attempt to get a matching user
+    // from the database. We can't let any user get a refresh token
+    // for any other user. The issuing user must only be able to
+    // get a refresh token for themselves.
+    let user = client.user().find_unique(user::id::equals(user_id)).exec().await.unwrap();
+    if user.is_none() {
+        return HttpResponse::Unauthorized().finish();
+    }
+    let user = user.unwrap();
+
+    // Generate a brand new shiny Biscuit and give it back to the client
+    // The biscuit is made to expire in 3600s or 60m
+    let user_id = user.id.clone();
+    let authority = biscuit!(
+        r#"
+            user({user_id});
+            check if time($time), $time <= {expiration};
+        "#,
+        user_id = user_id,
+        expiration = SystemTime::now() + Duration::from_secs(3600)
+    );
+    let refresh_token = authority.build(&root_key_pair).unwrap();
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .insert_header(("Authorization", refresh_token.to_base64().unwrap()))
+        .finish()
 }

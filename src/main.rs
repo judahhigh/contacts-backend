@@ -13,7 +13,7 @@ use biscuit_auth::KeyPair;
 mod users;
 mod utils;
 mod contacts;
-mod login;
+mod token;
 
 use crate::users::{ update_user, get_user, delete_user, create_user };
 use crate::contacts::{
@@ -24,7 +24,7 @@ use crate::contacts::{
     delete_contact,
     delete_all_contacts,
 };
-use crate::login::{login as login_handler, register};
+use crate::token::{login, register, refresh};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -68,8 +68,9 @@ async fn main() -> std::io::Result<()> {
             .service(update_contact)
             .service(delete_contact)
             .service(delete_all_contacts)
-            .service(login_handler)
+            .service(login)
             .service(register)
+            .service(refresh)
     })
         .bind(host)?
         .run().await
