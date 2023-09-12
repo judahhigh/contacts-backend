@@ -2,11 +2,13 @@ use actix_web::{ get, post, put, delete, web, HttpResponse, Responder, HttpReque
 use std::sync::Arc;
 use serde::Deserialize;
 
+use biscuit_auth::KeyPair;
+
 #[allow(warnings, unused)]
 use crate::prisma::PrismaClient;
 use crate::prisma::{ user, contact };
 
-use crate::utils::is_authed;
+use crate::utils::is_biscuit_authed;
 
 #[derive(Deserialize)]
 struct CreateContactRequest {
@@ -19,11 +21,12 @@ struct CreateContactRequest {
 #[post("/users/{user_id}/contacts")]
 async fn create_contact(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     body: web::Json<CreateContactRequest>,
     path: web::Path<String>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -47,10 +50,11 @@ async fn create_contact(
 #[get("/users/{user_id}/contacts/{contact_id}")]
 async fn get_contact(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     path: web::Path<(String, String)>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -70,10 +74,11 @@ async fn get_contact(
 #[get("/users/{user_id}/contacts")]
 async fn get_all_contacts(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     path: web::Path<String>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -98,11 +103,12 @@ struct UpdateContactRequest {
 #[put("/users/{user_id}/contacts")]
 async fn update_contact(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     body: web::Json<UpdateContactRequest>,
     path: web::Path<String>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -143,10 +149,11 @@ async fn update_contact(
 #[delete("/users/{user_id}/contacts/{contact_id}")]
 async fn delete_contact(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     path: web::Path<(String, String)>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -174,14 +181,14 @@ async fn delete_contact(
     HttpResponse::Ok().json(deleted_contact)
 }
 
-
 #[delete("/users/{user_id}/contacts")]
 async fn delete_all_contacts(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     path: web::Path<String>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
     let user_id = path.into_inner();

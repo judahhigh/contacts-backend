@@ -7,15 +7,18 @@ use bcrypt::{ DEFAULT_COST, hash, verify };
 use crate::prisma::PrismaClient;
 use crate::prisma::user;
 
-use crate::utils::is_authed;
+use biscuit_auth::KeyPair;
+
+use crate::utils::is_biscuit_authed;
 
 #[get("/users/{user_id}")]
 async fn get_user(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     path: web::Path<String>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -42,10 +45,11 @@ struct CreateUserRequest {
 #[post("/users")]
 async fn create_user(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     body: web::Json<CreateUserRequest>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -102,10 +106,11 @@ struct UpdateUserRequest {
 #[put("/users")]
 async fn update_user(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     body: web::Json<UpdateUserRequest>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 
@@ -151,10 +156,11 @@ async fn update_user(
 #[delete("/users/{user_id}")]
 async fn delete_user(
     client: web::Data<Arc<PrismaClient>>,
+    root_key_pair: web::Data<Arc<KeyPair>>,
     path: web::Path<String>,
     req: HttpRequest
 ) -> impl Responder {
-    if !is_authed(req) {
+    if !is_biscuit_authed(req, root_key_pair) {
         return HttpResponse::Unauthorized().finish();
     }
 

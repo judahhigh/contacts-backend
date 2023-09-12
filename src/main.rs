@@ -8,9 +8,12 @@ use dotenv::dotenv;
 mod prisma;
 use prisma::PrismaClient;
 
+use biscuit_auth::KeyPair;
+
 mod users;
 mod utils;
 mod contacts;
+mod login;
 
 use crate::users::{ update_user, get_user, delete_user, create_user };
 use crate::contacts::{
@@ -21,6 +24,7 @@ use crate::contacts::{
     delete_contact,
     delete_all_contacts,
 };
+use crate::login::login as login_handler;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -34,6 +38,9 @@ async fn main() -> std::io::Result<()> {
 
     log::info!("Starting HTTP server at http://{}", host);
 
+    // Used for biscuit auth
+    let root_keypair = Arc::new(KeyPair::new());
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(allowed_origin.as_str())
@@ -43,10 +50,12 @@ async fn main() -> std::io::Result<()> {
             .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
             .allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
             .allowed_header(http::header::CONTENT_TYPE)
+            .supports_credentials()
             .max_age(3600);
 
         App::new()
             .app_data(web::Data::new(client.clone()))
+            .app_data(web::Data::new(root_keypair.clone()))
             .wrap(middleware::Logger::default())
             .wrap(cors)
             .service(create_user)
@@ -59,6 +68,7 @@ async fn main() -> std::io::Result<()> {
             .service(update_contact)
             .service(delete_contact)
             .service(delete_all_contacts)
+            .service(login_handler)
     })
         .bind(host)?
         .run().await
