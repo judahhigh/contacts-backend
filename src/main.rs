@@ -24,7 +24,7 @@ use crate::contacts::{
     delete_contact,
     delete_all_contacts,
 };
-use crate::login::login as login_handler;
+use crate::login::{login as login_handler, register};
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -69,6 +69,7 @@ async fn main() -> std::io::Result<()> {
             .service(delete_contact)
             .service(delete_all_contacts)
             .service(login_handler)
+            .service(register)
     })
         .bind(host)?
         .run().await
