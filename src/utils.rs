@@ -1,6 +1,7 @@
 use actix_web::{ HttpRequest, web };
 use std::sync::Arc;
 use biscuit_auth::{ error, macros::*, Biscuit, KeyPair };
+use std::time::SystemTime;
 
 pub fn is_biscuit_authed(req: HttpRequest, root_key_pair: web::Data<Arc<KeyPair>>) -> bool {
     match req.headers().get("Authorization") {
@@ -23,9 +24,13 @@ pub fn is_biscuit_authed(req: HttpRequest, root_key_pair: web::Data<Arc<KeyPair>
 }
 
 fn authorize(token: &Biscuit) -> Result<(), error::Token> {
-    let authorizer = authorizer!(r#"
-        allow if user($u);
-    "#);
+    let authorizer = authorizer!(
+        r#"
+            time({current_time});
+            allow if user($u);
+        "#,
+        current_time = SystemTime::now()
+    );
     let res = token.authorize(&authorizer);
     if res.is_err() {
         return Err(res.err().unwrap());

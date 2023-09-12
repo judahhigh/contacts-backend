@@ -2,8 +2,7 @@ use actix_web::{ post, web, Responder, HttpResponse };
 use std::sync::Arc;
 use serde::Deserialize;
 use bcrypt::verify;
-// use chrono::prelude::*;
-// use chrono::Duration;
+use std::time::{ SystemTime, Duration };
 
 #[allow(warnings, unused)]
 use crate::prisma::PrismaClient;
@@ -45,17 +44,16 @@ async fn login(
         }
     }
 
-    // TODO: generate a Biscuit and give it back to the client
+    // Generate a Biscuit and give it back to the client
     // The biscuit is made to expire in 3600s or 60m
-    // let time: DateTime<Utc> = Utc::now() + Duration::seconds(3600);
-    // let expiration_time = time.format("%Y-%m-%dT%H:%M:%SZ").to_string();
-
     let user_id = user.username.clone();
     let authority = biscuit!(
         r#"
-        user({user_id});
+            user({user_id});
+            check if time($time), $time <= {expiration};
         "#,
-        user_id = user_id
+        user_id = user_id,
+        expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let token = authority.build(&root_key_pair).unwrap();
     HttpResponse::Ok().content_type("application/json").body(token.to_base64().unwrap())
