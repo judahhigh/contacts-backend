@@ -1,6 +1,6 @@
 use actix_web::{ get, post, web, Responder, HttpResponse, http::header::ContentType, HttpRequest };
 use std::sync::Arc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use bcrypt::{ hash, verify, DEFAULT_COST };
 use std::time::{ SystemTime, Duration };
 
@@ -18,12 +18,20 @@ struct LoginRequest {
     password: String,
 }
 
+#[derive(Serialize)]
+struct LoginResponse {
+    user: user::Data,
+    token: String,
+}
+
 #[post("/login")]
 async fn login(
     client: web::Data<Arc<PrismaClient>>,
     root_key_pair: web::Data<Arc<KeyPair>>,
     body: web::Json<LoginRequest>
 ) -> impl Responder {
+    println!("username: {:?}", body.username.to_string());
+    println!("password: {:?}", body.password.to_string());
     // Verify the login attempt first
     let user = client
         .user()
@@ -58,10 +66,10 @@ async fn login(
         expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let token = authority.build(&root_key_pair).unwrap();
+    let response_body: LoginResponse = LoginResponse { user: user.clone(), token: token.to_base64().unwrap() };
     HttpResponse::Ok()
         .content_type("application/json")
-        .insert_header(("Authorization", token.to_base64().unwrap()))
-        .json(user)
+        .json(response_body)
 }
 
 #[derive(Deserialize)]
@@ -69,6 +77,12 @@ struct RegisterRequest {
     username: String,
     email: String,
     password: String,
+}
+
+#[derive(Serialize)]
+struct RegisterResponse {
+    user: user::Data,
+    token: String,
 }
 
 #[post("/register")]
@@ -125,13 +139,18 @@ async fn register(
         expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let token = authority.build(&root_key_pair).unwrap();
-
+    
+    let response_body: RegisterResponse = RegisterResponse { user: user.clone(), token: token.to_base64().unwrap() };
     HttpResponse::Ok()
         .content_type("application/json")
-        .insert_header(("Authorization", token.to_base64().unwrap()))
-        .json(user)
+        .json(response_body)
 }
 
+#[derive(Serialize)]
+struct RefreshResponse {
+    user: user::Data,
+    token: String,
+}
 
 #[get("/refresh")]
 async fn refresh(
@@ -193,8 +212,9 @@ async fn refresh(
         expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let refresh_token = authority.build(&root_key_pair).unwrap();
+
+    let response_body: RefreshResponse = RefreshResponse { user: user.clone(), token: refresh_token.to_base64().unwrap() };
     HttpResponse::Ok()
-        .content_type(ContentType::plaintext())
-        .insert_header(("Authorization", refresh_token.to_base64().unwrap()))
-        .finish()
+        .content_type("application/json")
+        .json(response_body)
 }
