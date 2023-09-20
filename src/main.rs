@@ -15,6 +15,9 @@ mod utils;
 mod contacts;
 mod token;
 
+#[cfg(test)]
+mod tests;
+
 use crate::users::{ update_user, get_user, delete_user, create_user };
 use crate::contacts::{
     get_contact,

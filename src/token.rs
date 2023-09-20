@@ -1,42 +1,41 @@
-use actix_web::{ get, post, web, Responder, HttpResponse, http::header::ContentType, HttpRequest };
-use std::sync::Arc;
+use actix_web::{get, http::header::ContentType, post, web, HttpRequest, HttpResponse, Responder};
+use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
-use bcrypt::{ hash, verify, DEFAULT_COST };
-use std::time::{ SystemTime, Duration };
+use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
+use crate::prisma::user;
 #[allow(warnings, unused)]
 use crate::prisma::PrismaClient;
-use crate::prisma::user;
 
-use biscuit_auth::{ macros::*, Biscuit, KeyPair };
+use biscuit_auth::{macros::*, Biscuit, KeyPair};
 
 use crate::utils::is_biscuit_authed;
 
-#[derive(Deserialize)]
-struct LoginRequest {
-    username: String,
-    password: String,
+#[derive(Deserialize, Serialize)]
+pub struct LoginRequest {
+    pub username: String,
+    pub password: String,
 }
 
-#[derive(Serialize)]
-struct LoginResponse {
-    user: user::Data,
-    token: String,
+#[derive(Serialize, Deserialize)]
+pub struct LoginResponse {
+    pub user: user::Data,
+    pub token: String,
 }
 
 #[post("/login")]
 async fn login(
     client: web::Data<Arc<PrismaClient>>,
     root_key_pair: web::Data<Arc<KeyPair>>,
-    body: web::Json<LoginRequest>
+    body: web::Json<LoginRequest>,
 ) -> impl Responder {
-    println!("username: {:?}", body.username.to_string());
-    println!("password: {:?}", body.password.to_string());
     // Verify the login attempt first
     let user = client
         .user()
         .find_unique(user::username::equals(body.username.to_string()))
-        .exec().await
+        .exec()
+        .await
         .unwrap();
     if user.is_none() {
         return HttpResponse::Unauthorized().finish();
@@ -66,38 +65,41 @@ async fn login(
         expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let token = authority.build(&root_key_pair).unwrap();
-    let response_body: LoginResponse = LoginResponse { user: user.clone(), token: token.to_base64().unwrap() };
+    let response_body: LoginResponse = LoginResponse {
+        user: user.clone(),
+        token: token.to_base64().unwrap(),
+    };
     HttpResponse::Ok()
         .content_type("application/json")
         .json(response_body)
 }
 
-#[derive(Deserialize)]
-struct RegisterRequest {
-    username: String,
-    email: String,
-    password: String,
+#[derive(Deserialize, Serialize, Clone)]
+pub struct RegisterRequest {
+    pub username: String,
+    pub email: String,
+    pub password: String,
 }
 
-#[derive(Serialize)]
-struct RegisterResponse {
-    user: user::Data,
-    token: String,
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RegisterResponse {
+    pub user: user::Data,
+    pub token: String,
 }
 
 #[post("/register")]
 async fn register(
     client: web::Data<Arc<PrismaClient>>,
     root_key_pair: web::Data<Arc<KeyPair>>,
-    body: web::Json<RegisterRequest>
+    body: web::Json<RegisterRequest>,
 ) -> impl Responder {
     // Check that a user with the provided username doesn't already exist
-    match
-        client
-            .user()
-            .find_unique(user::username::equals(body.username.clone()))
-            .exec().await
-            .unwrap()
+    match client
+        .user()
+        .find_unique(user::username::equals(body.username.clone()))
+        .exec()
+        .await
+        .unwrap()
     {
         Some(_) => {
             return HttpResponse::BadRequest().finish();
@@ -123,8 +125,14 @@ async fn register(
     }
     let user = client
         .user()
-        .create(body.username.to_string(), body.email.to_string(), hashed_password, vec![])
-        .exec().await
+        .create(
+            body.username.to_string(),
+            body.email.to_string(),
+            hashed_password,
+            vec![],
+        )
+        .exec()
+        .await
         .unwrap();
 
     // Generate a Biscuit and give it back to the client
@@ -139,24 +147,27 @@ async fn register(
         expiration = SystemTime::now() + Duration::from_secs(3600)
     );
     let token = authority.build(&root_key_pair).unwrap();
-    
-    let response_body: RegisterResponse = RegisterResponse { user: user.clone(), token: token.to_base64().unwrap() };
+
+    let response_body: RegisterResponse = RegisterResponse {
+        user: user.clone(),
+        token: token.to_base64().unwrap(),
+    };
     HttpResponse::Ok()
         .content_type("application/json")
         .json(response_body)
 }
 
-#[derive(Serialize)]
-struct RefreshResponse {
-    user: user::Data,
-    token: String,
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RefreshResponse {
+    pub user: user::Data,
+    pub token: String,
 }
 
 #[get("/refresh")]
 async fn refresh(
     client: web::Data<Arc<PrismaClient>>,
     root_key_pair: web::Data<Arc<KeyPair>>,
-    req: HttpRequest
+    req: HttpRequest,
 ) -> impl Responder {
     // Validate the incoming authorization token before issuing a new token with a new expiration
     if !is_biscuit_authed(req.clone(), root_key_pair.clone()) {
@@ -194,7 +205,12 @@ async fn refresh(
     // from the database. We can't let any user get a refresh token
     // for any other user. The issuing user must only be able to
     // get a refresh token for themselves.
-    let user = client.user().find_unique(user::id::equals(user_id)).exec().await.unwrap();
+    let user = client
+        .user()
+        .find_unique(user::id::equals(user_id))
+        .exec()
+        .await
+        .unwrap();
     if user.is_none() {
         return HttpResponse::Unauthorized().finish();
     }
@@ -213,7 +229,10 @@ async fn refresh(
     );
     let refresh_token = authority.build(&root_key_pair).unwrap();
 
-    let response_body: RefreshResponse = RefreshResponse { user: user.clone(), token: refresh_token.to_base64().unwrap() };
+    let response_body: RefreshResponse = RefreshResponse {
+        user: user.clone(),
+        token: refresh_token.to_base64().unwrap(),
+    };
     HttpResponse::Ok()
         .content_type("application/json")
         .json(response_body)
