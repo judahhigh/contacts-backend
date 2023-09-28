@@ -1,6 +1,6 @@
 # Contacts Backend
 
-This repository houses code for a Rust-powered backend for a simple web application that allows registered users to manage a set of contacts. The backend exposes a CRUD api that sits behind an Biscuit-based authentication layer. The backend also exposes endpoints for login, registration, and biscuit token refresh. The client uses the login or register endpoint to get issued an access biscuit token they may use to make further requests on the backend. The backend is also configured with CORS to whitelist request traffic from the frontend client only. Passwords are stored through a hashing algorithm with salt for added security.
+This repository houses code for a Rust-powered backend for a simple web application that allows registered users to manage a set of contacts. The backend exposes a CRUD api that sits behind a Biscuit-based authentication layer. The backend also exposes endpoints for login, registration, and biscuit token refresh. The client uses the login or register endpoint to get issued an access biscuit token they may use to make further requests on the backend. The backend is also configured with CORS to whitelist request traffic from the frontend client only. Passwords are stored through a hashing algorithm with salt for added security.
 
 ## Authors
 
