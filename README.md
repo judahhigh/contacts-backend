@@ -38,7 +38,13 @@ To run the backend locally you must first install rust and then clone the reposi
 Go to the project directory
 
 ```bash
-  cd my-project
+  cd contacts-backend
+```
+
+Before building the project we need to initialize the SQLite database with Prisma. The following command builds a rust module exposing an interface to perform database operations for the models defined in prisma/schema.prisma.
+
+```bash
+  cargo prisma generate && cargo prisma db push
 ```
 
 Build the project
@@ -60,6 +66,8 @@ To run the test suite issue the following command.
 ```bash
   cargo test
 ```
+
+The backend is configured to receive requests from the frontend client available at https://github.com/judahhigh/contacts-frontend. To set up the frontend client, clone the frontend repo and follow the instructions to run it locally.
 
 ## Roadmap
 
